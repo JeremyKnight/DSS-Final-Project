@@ -1,121 +1,182 @@
-
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "RGB.h"
+#include <iostream>
 
-#include <stdio.h>
-
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
+/**
+* Helper function to calculate the greyscale value based on R, G, and B
+*/
+__device__ int greyscale(BYTE red, BYTE green, BYTE blue)
 {
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
+	int grey = 0.3 * red + 0.59 * green + 0 * 11 * blue; // calculate grey scale
+	return min(grey, 255);
 }
 
-int main()
+/**
+* Kernel for executing on GPY
+*/
+__global__ void greyscaleKernel(RGB* d_pixels, int height, int width)
 {
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
+	int x = blockIdx.x * blockDim.x + threadIdx.x; // width
+	int y = blockIdx.y * blockDim.y + threadIdx.y; // height
 
-    // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
-        return 1;
-    }
+	if (y >= height || y >= width)
+		return;
 
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
+	int index = y * width + x;
 
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-    cudaStatus = cudaDeviceReset();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
-        return 1;
-    }
+	int grey = greyscale(d_pixels[index].red, d_pixels[index].green, d_pixels[index].blue); // calculate grey scale
 
-    return 0;
+	d_pixels[index].red = grey;
+	d_pixels[index].green = grey;
+	d_pixels[index].blue = grey;
+
 }
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
+/**
+*	Helper function to calculate the number of blocks on an axis based on the total grid size and number of threads in that axis
+*/
+__host__ int calcBlockDim(int total, int num_threads)
 {
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
+	int r = total / num_threads;
+	if (total % num_threads != 0) // add one to cover all the threads per block
+		++r;
+	return r;
+}
 
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
+/**
+*	Host function for launching greyscale kernel
+*/
+__host__ void d_convert_greyscale(RGB* pixel, int height, int width)
+{
+	RGB* d_pixel;
 
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
 
-    cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(height, block.y);
 
-    cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
+	greyscaleKernel << <grid, block >> > (d_pixel, height, width);
 
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+}
 
-    cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
+__global__ void plusBlurKernel(RGB* d_pixels, int height, int width) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x; // width
+	int y = blockIdx.y * blockDim.y + threadIdx.y; // height
 
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, size>>>(dev_c, dev_a, dev_b);
+	int index = y * width + x;
 
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
+	int sumRed = d_pixels[index].red;
+	int sumBlue = d_pixels[index].blue;
+	int sumGreen = d_pixels[index].green;
+	int numOfChanges = 1;
 
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
+	if (y >= height || y >= width)
+		return;
+	if (y + 1 < height) {
+		int i = (y + 1) * width + x;
+		sumRed += d_pixels[i].red;
+		sumBlue += d_pixels[i].blue;
+		sumGreen += d_pixels[i].green;
+		numOfChanges++;
+	}
+	if (y - 1 > 0) {
+		int i = (y - 1) * width + x;
+		sumRed += d_pixels[i].red;
+		sumBlue += d_pixels[i].blue;
+		sumGreen += d_pixels[i].green;
+		numOfChanges++;
+	}
+	if (x + 1 < width) {
+		int i = y * width + (x + 1);
+		sumRed += d_pixels[i].red;
+		sumBlue += d_pixels[i].blue;
+		sumGreen += d_pixels[i].green;
+		numOfChanges++;
+	} if (x - 1 > 0) {
+		int i = y * width + (x - 1);
+		sumRed += d_pixels[i].red;
+		sumBlue += d_pixels[i].blue;
+		sumGreen += d_pixels[i].green;
+		numOfChanges++;
+	}
 
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
+	d_pixels[index].red = sumRed / numOfChanges;
+	d_pixels[index].green = sumGreen / numOfChanges;
+	d_pixels[index].blue = sumBlue / numOfChanges;
+}
+
+__host__ void plusBlurLauncher(RGB* pixel, int height, int width) {
+	RGB* d_pixel;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(height, block.y);
+
+	plusBlurKernel << <grid, block >> > (d_pixel, height, width);
+
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+
+}
+
+__global__ void  squareBlurKernel(RGB* pixels, int height, int width) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x; // width
+	int y = blockIdx.y * blockDim.y + threadIdx.y; // height
+
+	int index = y * width + x;
+
+	int sumRed = pixels[index].red;
+	int sumBlue = pixels[index].blue;
+	int sumGreen = pixels[index].green;
+	int numOfChanges = 1;
+
+	if (y >= height || y >= width) {
+		return;
+	}
+
+	//use a double for loop, and loop through the area adding into the averages while it is within bounds
+
+	for (int i = -2; i < 2; i++) {
+		for (int j = -2; j < 2; j++) {
+			if ((x + i > 0 && y + j > 0) && (x + i < width && y + j < height)) {
+				int is = (y + j) * width + (x + i);
+				sumRed += pixels[is].red;
+				sumBlue += pixels[is].blue;
+				sumGreen += pixels[is].green;
+				numOfChanges++;
+			}
+
+		}
+	}
+	pixels[index].red = sumRed / numOfChanges;
+	pixels[index].green = sumGreen / numOfChanges;
+	pixels[index].blue = sumBlue / numOfChanges;
+}
+
+__host__ void squareBlurLauncher(RGB* pixel, int height, int width) {
+	RGB* d_pixel;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(height, block.y);
+
+	squareBlurKernel << <grid, block >> > (d_pixel, height, width);
+
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+
 }
