@@ -191,49 +191,18 @@ int main()
 		cout << setw(15) << left << "Size: " << image.getImageSize() << " bytes\n";
 		cout << setw(15) << left << "Bit encoding: " << image.getBitCount() << " bits\n\n";
 
-		RGB* pixelsPC = image.getRGBImageArray(); // get the image array of RGB (Red, Green, and Blue) components
-		RGB* pixelsPG = image.getRGBImageArray();
-		RGB* pixelsSC = image.getRGBImageArray();
-		RGB* pixelsSG = image.getRGBImageArray();
+		RGB* pixels = image.getRGBImageArray(); // get the image array of RGB (Red, Green, and Blue) components
 
 		//convert image using cpu plus
-		auto startCPlus = high_resolution_clock::now();
-		convertPlusBlur(pixelsPC, image.getHeight(), image.getWidth());
-		auto stopCPlus = high_resolution_clock::now();
-		auto durationCPlus = duration_cast<microseconds>(stopCPlus - startCPlus);
-		image.setImageFromRGB(pixelsPC);
-		image.saveBMP("resultPlusCPU.bmp");
-
-		//convert image using gpu plus
-		auto startGPlus = high_resolution_clock::now();
-		plusBlurLauncher(pixelsPG, image.getHeight(), image.getWidth());
-		auto stopGPlus = high_resolution_clock::now();
-		auto durationGPlus = duration_cast<microseconds>(stopGPlus - startGPlus);
-		image.setImageFromRGB(pixelsPG);
-		image.saveBMP("resultPlusGPU.bmp");
-
-		//convert image using cpu square
-		auto startCSquare = high_resolution_clock::now();
-		convertSquareBlur(pixelsSC, image.getHeight(), image.getWidth());
-		auto stopCSquare = high_resolution_clock::now();
-		auto durationCSquare = duration_cast<microseconds>(stopCSquare - startCSquare);
-		image.setImageFromRGB(pixelsSC);
-		image.saveBMP("resultSquareCPU.bmp");
-
-		//convert image using gpu square
-		auto startGSquare = high_resolution_clock::now();
-		squareBlurLauncher(pixelsSG, image.getHeight(), image.getWidth());
-		auto stopGSquare = high_resolution_clock::now();
-		auto durationGSquare = duration_cast<microseconds>(stopGSquare - startGSquare);
-		image.setImageFromRGB(pixelsSG);
-		image.saveBMP("resultSquareGPU.bmp");
+		auto start = high_resolution_clock::now();
+		d_convert_greyscale(pixels, image.getHeight(), image.getWidth());
+		auto stop = high_resolution_clock::now();
+		auto duration = duration_cast<microseconds>(stop - start);
+		image.setImageFromRGB(pixels);
+		image.saveBMP("grayScale.bmp");
 
 		//printing out the duration for results
-		std::this_thread::sleep_for(std::chrono::seconds(20));
-		cout << "plus cpu took: " << durationCPlus.count() << " microseconds to make resultPlusCPU.bmp" << endl;
-		cout << "plus gpu took: " << durationGPlus.count() << " microseconds to make resultPlusGPU.bmp" << endl;
-		cout << "square cpu took: " << durationCSquare.count() << " microseconds to make resultSquareCPU.bmp" << endl;
-		cout << "square gpu took: " << durationGSquare.count() << " microseconds to make resultSquareGPU.bmp" << endl;
+		cout << "plus cpu took: " << duration.count() << " microseconds to make resultPlusCPU.bmp" << endl;
 
 		cout << "Check out test.bmp (click on it) to see image processing result\n\n";
 		char response = 'y';
