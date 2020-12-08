@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <mutex>
+#include <stdlib.h>
 using namespace std;
 using namespace std::chrono;
 
@@ -17,6 +18,7 @@ using namespace std::chrono;
 void d_convert_greyscale(RGB * pixels, int height, int width);
 void plusBlurLauncher(RGB* pixels, int height, int width);
 void squareBlurLauncher(RGB* pixels, int height, int width);
+void gradiantLauncher(RGB* pixels, int* edgeDir, int* gradiant, int height, int width);
 
 void convert_greyscale(RGB* pixels, int height, int width)
 {
@@ -164,8 +166,234 @@ void convertSquareBlur(RGB* pixels, int height, int width) {
 	}
 }
 
-int main()
-{
+void gradiantMaker(RGB* pixels, int* edgeDir, int* gradiant, int height, int width) {
+	//int row = blockIdx.x * blockDim.x + threadIdx.x; // width
+	//int col = blockIdx.y * blockDim.y + threadIdx.y; // height
+	
+			int newAngle = 0;
+			
+			int* GxMask = (int*)malloc(width * 3);
+			int* GyMask = (int*)malloc(width * 3);
+
+			//int GxMask[1000000];				// Sobel mask in the x direction
+			//int GyMask[1000000];				// Sobel mask in the y direction
+			//printf("hello there");
+			//sobel mask set up
+			//GxMask[width * 4] = 20;
+
+			GxMask[0] = -1; GxMask[1] = -2;  GxMask[2] = -1;
+			GxMask[width] = 0;  GxMask[width + 1] = 0;  GxMask[width + 2] = 0;
+			GxMask[width * 2] = 1;  GxMask[width * 2 + 1] = 2;  GxMask[width * 2 + 2] = 1;
+			GyMask[0] = 1; GyMask[1] = 0; GyMask[2] = -1;
+			GyMask[width] = 2; GyMask[width + 1] = 0; GyMask[width + 2] = -2;
+			GyMask[width * 2] = 1; GyMask[width * 2 + 1] = 0; GyMask[width * 2 + 2] = -1;
+			/*
+			printf("ahhhhh");
+			if (col >= height || col >= width) {
+				return;
+			}
+			*/
+			//long i = (unsigned long)(row * 3 * width + 3 * col);
+
+	for (int row = 0; row < width; row++) {
+		for (int col = 0; col < width; col++) {
+			int index = col * width + row;
+			long Gx = 0;
+			long Gy = 0;
+			/* Calculate the sum of the Sobel mask times the nine surrounding pixels in the x and y direction */
+			for (int rowOffset = -1; rowOffset <= 1; rowOffset++) {
+				for (int colOffset = -1; colOffset <= 1; colOffset++) {
+					int rowTotal = row + rowOffset;
+					int colTotal = col + colOffset;
+					long iOffset = (unsigned long)(rowTotal * 3 * width + colTotal * 3);
+					//the stuff below is kinda questionable, I'm honestly not sure what this is supposed to do and 
+					//on top of this, it could all very well be wrong due to me changing it to use pixels[index]
+					int gIndex = colOffset * width + rowOffset + 1;
+					Gx = Gx + (pixels[index].red * (GxMask[gIndex]));//the image should have already been changed to grayscale so any color should be fine
+					//std::cout << "red from graidnant strength in kernel is: " << pixels[index].red << std::endl;
+					//printf("red from graidnant strength in kernel is: %d", pixels[index].red);
+					Gy = Gy + (pixels[index].red * (GyMask[gIndex]));
+				}
+			}
+
+			gradiant[index] = sqrt((Gx * Gx) + (Gy * Gy));	// Calculate gradient strength			
+
+			double thisAngle = (atan2(Gx, Gy) / 3.14159) * 180.0;		// Calculate actual direction of edge
+
+			/* Convert actual edge direction to approximate value */
+			if (((thisAngle < 22.5) && (thisAngle > -22.5)) || (thisAngle > 157.5) || (thisAngle < -157.5))
+				newAngle = 0;
+			if (((thisAngle > 22.5) && (thisAngle < 67.5)) || ((thisAngle < -112.5) && (thisAngle > -157.5)))
+				newAngle = 45;
+			if (((thisAngle > 67.5) && (thisAngle < 112.5)) || ((thisAngle < -67.5) && (thisAngle > -112.5)))
+				newAngle = 90;
+			if (((thisAngle > 112.5) && (thisAngle < 157.5)) || ((thisAngle < -22.5) && (thisAngle > -67.5)))
+				newAngle = 135;
+
+			edgeDir[index] = newAngle;		// Store the approximate edge direction of each pixel in one array
+		}
+	}
+}
+
+
+void findEdge(RGB* pixels, int* edgeDir, int* gradient, int rowShift, int colShift, int row, int col, int dir, int lowerThreshold, int width, int height) {
+	//int W = 320;
+	//int H = 240;
+	int newRow = 0;
+	int newCol = 0;
+	unsigned long i;
+	bool edgeEnd = false;
+
+	int index = col * width + row;
+
+	/* Find the row and column values for the next possible pixel on the edge */
+	if (colShift < 0) {
+		if (col > 0)
+			newCol = col + colShift;
+		else
+			edgeEnd = true;
+	}
+	else if (col < width - 1) {
+		newCol = col + colShift;
+	}
+	else 
+		edgeEnd = true;		// If the next pixel would be off image, don't do the while loop
+	if (rowShift < 0) {
+		if (row > 0)
+			newRow = row + rowShift;
+		else
+			edgeEnd = true;
+	}
+	else if (row < height - 1) {
+		newRow = row + rowShift;
+	}
+	else 
+		edgeEnd = true;
+	
+
+	/* Determine edge directions and gradient strengths */
+	int newIndex = newCol * width + newRow;
+	while ((edgeDir[newIndex] == dir) && !edgeEnd && (gradient[newIndex] > lowerThreshold)) {
+		/* Set the new pixel as white to show it is an edge */
+		i = (unsigned long)(newRow * 3 * width + 3 * newCol);
+		/*
+		pixels[newIndex].red + i = 255;
+		*pixels[newIndex].blue + i + 1 = 255;
+		*pixels[newIndex].green + i + 2 = 255;
+		*/
+		pixels[newIndex].red = 255;
+		pixels[newIndex].blue = 255;
+		pixels[newIndex].green = 255;
+
+		if (colShift < 0) {
+			if (newCol > 0)
+				newCol = newCol + colShift;
+			else
+				edgeEnd = true;
+		}
+		else if (newCol < width - 1) {
+			newCol = newCol + colShift;
+		}
+		else
+			edgeEnd = true;
+		if (rowShift < 0) {
+			if (newRow > 0)
+				newRow = newRow + rowShift;
+			else
+				edgeEnd = true;
+		}
+		else if (newRow < height - 1) {
+			newRow = newRow + rowShift;
+		}
+		else
+			edgeEnd = true;
+	}
+}
+
+void traceEdge(RGB* pixels, int* edgeDir, int* gradient, int width, int height) {
+	/* Trace along all the edges in the image */
+	for (int r = 0; r < height; r++) {
+		for (int c = 0; c < width; c++) {
+			bool edgeEnd = false;
+			int index = c * width + r;
+			if (gradient[index] > 60) {		//this went over // Check to see if current pixel has a high enough gradient strength to be part of an edge
+				/* Switch based on current pixel's edge direction */
+				switch (edgeDir[index]) {
+				case 0:
+					findEdge(pixels,edgeDir, gradient,0, 1, r, c, 0, 30, width, height);
+					break;
+				case 45:
+					findEdge(pixels, edgeDir, gradient, 1, 1, r, c, 0, 30, width,height);
+					break;
+				case 90:
+					findEdge(pixels, edgeDir, gradient, 1, 0, r, c, 0, 30, width, height);
+					break;
+				case 135:
+					findEdge(pixels, edgeDir, gradient, 1, -1, r, c, 0, 30, width, height);
+					break;
+				default:
+					//i = (unsigned long)(row * 3 * W + 3 * col);
+					pixels[index].red = 0;
+					pixels[index].blue = 0;
+					pixels[index].green = 0;
+					break;
+				}
+			}
+			else {
+				pixels[index].red = 0;
+				pixels[index].blue = 0;
+				pixels[index].green = 0;
+			}
+		}
+	}
+
+	/* Suppress any pixels not changed by the edge tracing */
+	for (int r = 0; r < height; r++) {
+		for (int c = 0; c < width; c++) {
+			// Recall each pixel is composed of 3 bytes
+			//i = (unsigned long)(row * 3 * width + 3 * col);
+			int index = c * width + r;
+			// If a pixel's grayValue is not black or white make it black
+			if (((pixels[index].red != 255) && (pixels[index].green != 0)) || ((pixels[index].blue != 255))) { // && (*(m_destinationBmp + i + 1) != 0)) || ((*(m_destinationBmp + i + 2) != 255))) {
+				//&& (*(m_destinationBmp + i + 2) != 0)))
+				pixels[index].red = 0;
+				pixels[index].blue = 0;
+				pixels[index].green = 0;
+			}
+		}
+	}
+
+	/*
+	//Non-maximum Suppression 
+	for (row = 1; row < H - 1; row++) {
+		for (col = 1; col < W - 1; col++) {
+			i = (unsigned long)(row * 3 * W + 3 * col);
+			if (*(m_destinationBmp + i) == 255) {		// Check to see if current pixel is an edge
+				//Switch based on current pixel's edge direction 
+				switch (edgeDir[row][col]) {
+				case 0:
+					suppressNonMax(1, 0, row, col, 0, lowerThreshold);
+					break;
+				case 45:
+					suppressNonMax(1, -1, row, col, 45, lowerThreshold);
+					break;
+				case 90:
+					suppressNonMax(0, 1, row, col, 90, lowerThreshold);
+					break;
+				case 135:
+					suppressNonMax(1, 1, row, col, 135, lowerThreshold);
+					break;
+				default:
+					break;
+				}
+			}
+		}
+		
+	}
+	*/
+}
+
+int main() {
 	do {
 		string image_archive[NUM_IMAGES] = { "lena.bmp", "marbles.bmp", "sierra_02.bmp" };
 		cout << "Select an image: \n";
@@ -192,18 +420,48 @@ int main()
 		cout << setw(15) << left << "Bit encoding: " << image.getBitCount() << " bits\n\n";
 
 		RGB* pixels = image.getRGBImageArray(); // get the image array of RGB (Red, Green, and Blue) components
+		int height = image.getHeight();
+		int width = image.getWidth();
+		//const int ISize = width * height;
+		std::cout << width * height << std::endl;
+		int* gradiant = (int*)malloc((height * width) * 300);
+		int* edgeDir = (int*)malloc((height * width) * 300);
 
-		//convert image using cpu plus
-		auto start = high_resolution_clock::now();
-		d_convert_greyscale(pixels, image.getHeight(), image.getWidth());
-		auto stop = high_resolution_clock::now();
-		auto duration = duration_cast<microseconds>(stop - start);
+		//turn to grey
+		d_convert_greyscale(pixels, image.getHeight(), image.getWidth()); //convert image using grayScale
 		image.setImageFromRGB(pixels);
 		image.saveBMP("grayScale.bmp");
 
+		
+		//turn to blur
+		plusBlurLauncher(pixels, image.getHeight(), image.getWidth());
+		//convertSquareBlur(pixels, image.getHeight(), image.getWidth());
+		image.setImageFromRGB(pixels);
+		image.saveBMP("PlusBlurDone.bmp");
+		
+
+		//find gradiant or alter gradiant
+		//gradiantLauncher(pixels, edgeDir, gradiant, image.getHeight(), image.getWidth());
+		gradiantMaker(pixels, edgeDir, gradiant, image.getHeight(), image.getWidth());
+		image.setImageFromRGB(pixels);
+		image.saveBMP("Gradiant.bmp");
+		//for this, I can either pass Canny.h as either a holder object to hold the info so that it get passed within each object
+		//or I can use it as a helper function to help with
+
+		//RGB* pixels, int* edgeDir, int* gradient, int rowShift, int colShift, int row, int col, int dir, int lowerThreshold, int width, int height
+		traceEdge(pixels, edgeDir, gradiant, image.getWidth(), image.getHeight());
+		image.setImageFromRGB(pixels);
+		image.saveBMP("WTF.bmp");
+		/*
+		//convert image using cpu plus
+		auto start = high_resolution_clock::now();
+		auto stop = high_resolution_clock::now();
+		auto duration = duration_cast<microseconds>(stop - start);
 		//printing out the duration for results
 		cout << "plus cpu took: " << duration.count() << " microseconds to make resultPlusCPU.bmp" << endl;
-
+		*/
+		free(gradiant);
+		free(edgeDir);
 		cout << "Check out test.bmp (click on it) to see image processing result\n\n";
 		char response = 'y';
 		cout << "Do you wish to repeat? [y/n] ";

@@ -178,7 +178,7 @@ __global__ void GradiantStrength(RGB* pixels, int* edgeDir, int* gradiant, int h
 	//int GyMask[1000000];				// Sobel mask in the y direction
 	//printf("hello there");
 	//sobel mask set up
-	//GxMask[width * 4] = 20;
+	GxMask[width * 4] = 20;
 
 	GxMask[0] = -1; GxMask[1] = -2;  GxMask[2] = -1;
 	GxMask[width] = 0;  GxMask[width + 1] = 0;  GxMask[width + 2] = 0;
@@ -258,60 +258,4 @@ __host__ void gradiantLauncher(RGB* pixels, int* edgeDir, int* gradiant, int hei
 
 	GradiantStrength << <grid, block >> > (d_pixel, edgeDir, gradiant, height, width);
 	cudaMemcpy(pixels, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
-}
-
-
-// |Gx(x,y)| = -P(x-1,y-1) + -2 *P(x-1,y) + -P(x-1,y+1) + P(x+1,y-1) + 2 * P(x + 1, y) + P(x + 1, y + 1)
-// |Gy(x,y)| = P(x-1,y-1) + 2*P(x,y-1) + P(x+1,y-1) + -P(x-1,y+1) + –2 * P(x, y + 1) - P(x + 1, y + 1)
-__global__ void edgeDetectionKernel(RGB* d_pixels, RGB* d_result, int height, int width)
-{
-	// determine the current pixel
-	int col = blockIdx.x * blockDim.x + threadIdx.x;
-	int row = blockIdx.y * blockDim.y + threadIdx.y;
-
-	float reddx, reddy;
-	float greendx, greendy;
-	float bluedx, bluedy;
-
-	if (col > 0 && row > 0 && col < width - 1 && row < height - 1) {
-		//red
-		reddx = (-1 * d_pixels[(row - 1) * width + (col - 1)].red) + (-2 * d_pixels[row * width + (col - 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (2 * d_pixels[row * width + (col + 1)].red) + (d_pixels[(row + 1) * width + (col + 1)].red);
-		reddy = (d_pixels[(row - 1) * width + (col - 1)].red) + (2 * d_pixels[(row - 1) * width + col].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (-2 * d_pixels[(row + 1) * width + col].red) + (-1 * d_pixels[(row + 1) * width + (col + 1)].red);
-			
-		d_result[row * width + col].red = (unsigned char)(sqrt((reddx * reddx) + (reddy * reddy)));
-
-		//green
-		greendx = (-1 * d_pixels[(row - 1) * width + (col - 1)].green) + (-2 * d_pixels[row * width + (col - 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (2 * d_pixels[row * width + (col + 1)].green) + (d_pixels[(row + 1) * width + (col + 1)].green);
-		greendy = (d_pixels[(row - 1) * width + (col - 1)].green) + (2 * d_pixels[(row - 1) * width + col].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (-2 * d_pixels[(row + 1) * width + col].green) + (-1 * d_pixels[(row + 1) * width + (col + 1)].green);
-			
-		d_result[row * width + col].green = (unsigned char)(sqrt((greendx * greendx) + (greendy * greendy)));
-			
-		//blue
-		bluedx = (-1 * d_pixels[(row - 1) * width + (col - 1)].blue) + (-2 * d_pixels[row * width + (col - 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (2 * d_pixels[row * width + (col + 1)].blue) + (d_pixels[(row + 1) * width + (col + 1)].blue);
-		bluedy = (d_pixels[(row - 1) * width + (col - 1)].blue) + (2 * d_pixels[(row - 1) * width + col].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (-2 * d_pixels[(row + 1) * width + col].blue) + (-1 * d_pixels[(row + 1) * width + (col + 1)].blue);
-			
-		d_result[row * width + col].blue = (unsigned char)(sqrt((bluedx * bluedx) + (bluedy * bluedy)));
-
-	}
-}
-
-__host__ void d_edge_detection(RGB* pixel, int height, int width)
-{
-	RGB* d_pixel;
-	RGB* d_result;
-
-	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
-	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
-	cudaMalloc(&d_result, height * width * sizeof(RGB));
-	cudaMemcpy(d_result, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
-
-	dim3 grid, block;
-	block.x = 16;
-	block.y = 16;
-	grid.x = calcBlockDim(width, block.x);
-	grid.y = calcBlockDim(height, block.y);
-
-	edgeDetectionKernel << <grid, block >> > (d_pixel, d_result, height, width);
-
-	cudaMemcpy(pixel, d_result, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
 }
