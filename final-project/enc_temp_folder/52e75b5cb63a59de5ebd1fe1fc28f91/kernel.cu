@@ -178,7 +178,7 @@ __global__ void GradiantStrength(RGB* pixels, int* edgeDir, int* gradiant, int h
 	//int GyMask[1000000];				// Sobel mask in the y direction
 	//printf("hello there");
 	//sobel mask set up
-	//GxMask[width * 4] = 20;
+	GxMask[width * 4] = 20;
 
 	GxMask[0] = -1; GxMask[1] = -2;  GxMask[2] = -1;
 	GxMask[width] = 0;  GxMask[width + 1] = 0;  GxMask[width + 2] = 0;

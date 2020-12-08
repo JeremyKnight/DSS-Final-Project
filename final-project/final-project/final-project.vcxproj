@@ -81,6 +81,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bmp.h" />
+    <ClInclude Include="Canny.h" />
     <ClInclude Include="RGB.h" />
   </ItemGroup>
   <ItemGroup>
