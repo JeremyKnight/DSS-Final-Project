@@ -315,3 +315,121 @@ __host__ void d_edge_detection(RGB* pixel, int height, int width)
 
 	cudaMemcpy(pixel, d_result, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
 }
+
+__global__ void contrastKernel(RGB* d_pixels, int height, int width, int rincrease, int gincrease, int bincrease)
+{
+	// determine the current pixel
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (col < width && row < height) {
+		int index = row * width + col;
+		//red
+		if (d_pixels[index].red + rincrease < 256 && d_pixels[index].red + rincrease > -1) {
+			d_pixels[index].red += rincrease;
+		}
+		else if (d_pixels[index].red + rincrease > 255) {
+			d_pixels[index].red = 255;
+		}
+		else if (d_pixels[index].red + rincrease < 0) {
+			d_pixels[index].red = 0;
+		}
+		//green
+		if (d_pixels[index].green + gincrease < 256 && d_pixels[index].green + gincrease > -1) {
+			d_pixels[index].green += gincrease;
+		}
+		else if (d_pixels[index].green + gincrease > 255) {
+			d_pixels[index].green = 255;
+		}
+		else if (d_pixels[index].green + gincrease < 0) {
+			d_pixels[index].green = 0;
+		}
+		// blue
+		if (d_pixels[index].blue + bincrease < 256 && d_pixels[index].blue + bincrease > -1) {
+			d_pixels[index].blue += bincrease;
+		}
+		else if (d_pixels[index].blue + bincrease > 255) {
+			d_pixels[index].blue = 255;
+		}
+		else if (d_pixels[index].blue + bincrease < 0) {
+			d_pixels[index].blue = 0;
+		}
+	}
+}
+
+__host__ void d_contrast(RGB* pixel, int height, int width, int rincrease, int gincrease, int bincrease)
+{
+	RGB* d_pixel;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(width, block.y);
+
+	contrastKernel << <grid, block >> > (d_pixel, height, width, rincrease, gincrease, bincrease);
+
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+}
+
+__global__ void brightnessKernel(RGB* d_pixels, int height, int width, int bright)
+{
+	// determine the current pixel
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (col < width && row < height) {
+		int index = row * width + col;
+		//red
+		if (d_pixels[index].red * bright < 256 && d_pixels[index].red * bright > -1) {
+			d_pixels[index].red *= bright;
+		}
+		else if (d_pixels[index].red * bright > 255) {
+			d_pixels[index].red = 255;
+		}
+		else if (d_pixels[index].red * bright < 0) {
+			d_pixels[index].red = 0;
+		}
+		//green
+		if (d_pixels[index].green * bright < 256 && d_pixels[index].green * bright > -1) {
+			d_pixels[index].green *= bright;
+		}
+		else if (d_pixels[index].green * bright > 255) {
+			d_pixels[index].green = 255;
+		}
+		else if (d_pixels[index].green * bright < 0) {
+			d_pixels[index].green = 0;
+		}
+		//blue
+		if (d_pixels[index].blue * bright < 256 && d_pixels[index].blue * bright > -1) {
+			d_pixels[index].blue *= bright;
+		}
+		else if (d_pixels[index].blue * bright > 255) {
+			d_pixels[index].blue = 255;
+		}
+		else if (d_pixels[index].blue * bright < 0) {
+			d_pixels[index].blue = 0;
+		}
+	}
+}
+
+__host__ void d_brightness(RGB* pixel, int height, int width, int bright)
+{
+	RGB* d_pixel;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(width, block.y);
+
+	brightnessKernel << <grid, block >> > (d_pixel, height, width, bright);
+
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+}
