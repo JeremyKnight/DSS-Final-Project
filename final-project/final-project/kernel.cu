@@ -255,67 +255,101 @@ __host__ void gradiantLauncher(RGB* pixels, int* edgeDir, int* gradiant, int hei
 
 // |Gx(x,y)| = -P(x-1,y-1) + -2 *P(x-1,y) + -P(x-1,y+1) + P(x+1,y-1) + 2 * P(x + 1, y) + P(x + 1, y + 1)
 // |Gy(x,y)| = P(x-1,y-1) + 2*P(x,y-1) + P(x+1,y-1) + -P(x-1,y+1) + –2 * P(x, y + 1) - P(x + 1, y + 1)
-
-__global__ void edgeDetectionKernel(RGB* d_pixels, int height, int width)
+__global__ void edgeDetectionKernel(RGB* d_pixels, RGB* d_result, int height, int width)
 {
 	// determine the current pixel
 	int col = blockIdx.x * blockDim.x + threadIdx.x;
 	int row = blockIdx.y * blockDim.y + threadIdx.y;
 
-	/*float h, s, i;
-	i = (d_pixels[row * width + col].red + d_pixels[row * width + col].green + d_pixels[row * width + col].blue) / 3;
-	h = acos(((d_pixels[row * width + col].red - d_pixels[row * width + col].green) + (d_pixels[row * width + col].red - d_pixels[row * width + col].blue) / (2 * sqrt(((d_pixels[row * width + col].red - d_pixels[row * width + col].green) * (d_pixels[row * width + col].red - d_pixels[row * width + col].green)) + ((d_pixels[row * width + col].red - d_pixels[row * width + col].blue) * (d_pixels[row * width + col].green - d_pixels[row * width + col].blue))))));
-	if (d_pixels[row * width + col].red < d_pixels[row * width + col].green && d_pixels[row * width + col].red < d_pixels[row * width + col].blue) {
-		s = d_pixels[row * width + col].red / i;
-	}
-	else if (d_pixels[row * width + col].green < d_pixels[row * width + col].red && d_pixels[row * width + col].green < d_pixels[row * width + col].blue) {
-		s = d_pixels[row * width + col].green / i;
-	}
-	else {
-		s = d_pixels[row * width + col].blue / i;
-	}
-
-	d_pixels[row * width + col].red = h;
-	d_pixels[row * width + col].green = s;
-	d_pixels[row * width + col].blue = i;*/
-
 	float reddx, reddy;
 	float greendx, greendy;
 	float bluedx, bluedy;
 
-	if (col < width && row < height) {
-		if (col > 0 && row > 0 && col < width && row < height) {
-			//red
-			reddx = (-1 * d_pixels[(row - 1) * width + (col - 1)].red) + (-2 * d_pixels[row * width + (col - 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (2 * d_pixels[row * width + (col + 1)].red) + (d_pixels[(row + 1) * width + (col + 1)].red);
-			reddy = (d_pixels[(row - 1) * width + (col - 1)].red) + (2 * d_pixels[(row - 1) * width + col].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (-2 * d_pixels[(row + 1) * width + col].red) + (-1 * d_pixels[(row + 1) * width + (col + 1)].red);
+	if (col > 0 && row > 0 && col < width - 1 && row < height - 1) {
+		//red
+		reddx = (-1 * d_pixels[(row - 1) * width + (col - 1)].red) + (-2 * d_pixels[row * width + (col - 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (2 * d_pixels[row * width + (col + 1)].red) + (d_pixels[(row + 1) * width + (col + 1)].red);
+		reddy = (d_pixels[(row - 1) * width + (col - 1)].red) + (2 * d_pixels[(row - 1) * width + col].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (-2 * d_pixels[(row + 1) * width + col].red) + (-1 * d_pixels[(row + 1) * width + (col + 1)].red);
 			
-			//reddx /= 5;
-			//reddy /= 5;
+		d_result[row * width + col].red = (unsigned char)(sqrt((reddx * reddx) + (reddy * reddy)));
+
+		//green
+		greendx = (-1 * d_pixels[(row - 1) * width + (col - 1)].green) + (-2 * d_pixels[row * width + (col - 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (2 * d_pixels[row * width + (col + 1)].green) + (d_pixels[(row + 1) * width + (col + 1)].green);
+		greendy = (d_pixels[(row - 1) * width + (col - 1)].green) + (2 * d_pixels[(row - 1) * width + col].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (-2 * d_pixels[(row + 1) * width + col].green) + (-1 * d_pixels[(row + 1) * width + (col + 1)].green);
 			
-			d_pixels[row * width + col].red = sqrt((reddx * reddx) + (reddy * reddy));
+		d_result[row * width + col].green = (unsigned char)(sqrt((greendx * greendx) + (greendy * greendy)));
 			
-			//green
-			greendx = (-1 * d_pixels[(row - 1) * width + (col - 1)].green) + (-2 * d_pixels[row * width + (col - 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (2 * d_pixels[row * width + (col + 1)].green) + (d_pixels[(row + 1) * width + (col + 1)].green);
-			greendy = (d_pixels[(row - 1) * width + (col - 1)].green) + (2 * d_pixels[(row - 1) * width + col].green) + (d_pixels[(row - 1) * width + (col + 1)].green) + (-1 * d_pixels[(row + 1) * width + (col - 1)].green) + (-2 * d_pixels[(row + 1) * width + col].green) + (-1 * d_pixels[(row + 1) * width + (col + 1)].green);
+		//blue
+		bluedx = (-1 * d_pixels[(row - 1) * width + (col - 1)].blue) + (-2 * d_pixels[row * width + (col - 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (2 * d_pixels[row * width + (col + 1)].blue) + (d_pixels[(row + 1) * width + (col + 1)].blue);
+		bluedy = (d_pixels[(row - 1) * width + (col - 1)].blue) + (2 * d_pixels[(row - 1) * width + col].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (-2 * d_pixels[(row + 1) * width + col].blue) + (-1 * d_pixels[(row + 1) * width + (col + 1)].blue);
 			
-			//greendx /= 5;
-			//greendy /= 5;
-			
-			d_pixels[row * width + col].green = sqrt((greendx * greendx) + (greendy * greendy));
-			
-			//blue
-			bluedx = (-1 * d_pixels[(row - 1) * width + (col - 1)].blue) + (-2 * d_pixels[row * width + (col - 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (2 * d_pixels[row * width + (col + 1)].blue) + (d_pixels[(row + 1) * width + (col + 1)].blue);
-			bluedy = (d_pixels[(row - 1) * width + (col - 1)].blue) + (2 * d_pixels[(row - 1) * width + col].blue) + (d_pixels[(row - 1) * width + (col + 1)].blue) + (-1 * d_pixels[(row + 1) * width + (col - 1)].blue) + (-2 * d_pixels[(row + 1) * width + col].blue) + (-1 * d_pixels[(row + 1) * width + (col + 1)].blue);
-			
-			//bluedx /= 5;
-			//bluedy /= 5;
-			
-			d_pixels[row * width + col].blue = sqrt((bluedx * bluedx) + (bluedy * bluedy));
-		}
+		d_result[row * width + col].blue = (unsigned char)(sqrt((bluedx * bluedx) + (bluedy * bluedy)));
+
 	}
 }
 
 __host__ void d_edge_detection(RGB* pixel, int height, int width)
+{
+	RGB* d_pixel;
+	RGB* d_result;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+	cudaMalloc(&d_result, height * width * sizeof(RGB));
+	cudaMemcpy(d_result, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(height, block.y);
+
+	edgeDetectionKernel << <grid, block >> > (d_pixel, d_result, height, width);
+
+	cudaMemcpy(pixel, d_result, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+}
+
+__global__ void contrastKernel(RGB* d_pixels, int height, int width, int rincrease, int gincrease, int bincrease)
+{
+	// determine the current pixel
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (col < width && row < height) {
+		int index = row * width + col;
+		//red
+		if (d_pixels[index].red + rincrease < 256 && d_pixels[index].red + rincrease > -1) {
+			d_pixels[index].red += rincrease;
+		}
+		else if (d_pixels[index].red + rincrease > 255) {
+			d_pixels[index].red = 255;
+		}
+		else if (d_pixels[index].red + rincrease < 0) {
+			d_pixels[index].red = 0;
+		}
+		//green
+		if (d_pixels[index].green + gincrease < 256 && d_pixels[index].green + gincrease > -1) {
+			d_pixels[index].green += gincrease;
+		}
+		else if (d_pixels[index].green + gincrease > 255) {
+			d_pixels[index].green = 255;
+		}
+		else if (d_pixels[index].green + gincrease < 0) {
+			d_pixels[index].green = 0;
+		}
+		// blue
+		if (d_pixels[index].blue + bincrease < 256 && d_pixels[index].blue + bincrease > -1) {
+			d_pixels[index].blue += bincrease;
+		}
+		else if (d_pixels[index].blue + bincrease > 255) {
+			d_pixels[index].blue = 255;
+		}
+		else if (d_pixels[index].blue + bincrease < 0) {
+			d_pixels[index].blue = 0;
+		}
+	}
+}
+
+__host__ void d_contrast(RGB* pixel, int height, int width, int rincrease, int gincrease, int bincrease)
 {
 	RGB* d_pixel;
 
@@ -326,9 +360,68 @@ __host__ void d_edge_detection(RGB* pixel, int height, int width)
 	block.x = 16;
 	block.y = 16;
 	grid.x = calcBlockDim(width, block.x);
-	grid.y = calcBlockDim(height, block.y);
+	grid.y = calcBlockDim(width, block.y);
 
-	edgeDetectionKernel << <grid, block >> > (d_pixel, height, width);
+	contrastKernel << <grid, block >> > (d_pixel, height, width, rincrease, gincrease, bincrease);
+
+	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+}
+
+__global__ void brightnessKernel(RGB* d_pixels, int height, int width, int bright)
+{
+	// determine the current pixel
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (col < width && row < height) {
+		int index = row * width + col;
+		//red
+		if (d_pixels[index].red * bright < 256 && d_pixels[index].red * bright > -1) {
+			d_pixels[index].red *= bright;
+		}
+		else if (d_pixels[index].red * bright > 255) {
+			d_pixels[index].red = 255;
+		}
+		else if (d_pixels[index].red * bright < 0) {
+			d_pixels[index].red = 0;
+		}
+		//green
+		if (d_pixels[index].green * bright < 256 && d_pixels[index].green * bright > -1) {
+			d_pixels[index].green *= bright;
+		}
+		else if (d_pixels[index].green * bright > 255) {
+			d_pixels[index].green = 255;
+		}
+		else if (d_pixels[index].green * bright < 0) {
+			d_pixels[index].green = 0;
+		}
+		//blue
+		if (d_pixels[index].blue * bright < 256 && d_pixels[index].blue * bright > -1) {
+			d_pixels[index].blue *= bright;
+		}
+		else if (d_pixels[index].blue * bright > 255) {
+			d_pixels[index].blue = 255;
+		}
+		else if (d_pixels[index].blue * bright < 0) {
+			d_pixels[index].blue = 0;
+		}
+	}
+}
+
+__host__ void d_brightness(RGB* pixel, int height, int width, int bright)
+{
+	RGB* d_pixel;
+
+	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
+	cudaMemcpy(d_pixel, pixel, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+
+	dim3 grid, block;
+	block.x = 16;
+	block.y = 16;
+	grid.x = calcBlockDim(width, block.x);
+	grid.y = calcBlockDim(width, block.y);
+
+	brightnessKernel << <grid, block >> > (d_pixel, height, width, bright);
 
 	cudaMemcpy(pixel, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
 }
