@@ -2,7 +2,7 @@
 #include "device_launch_parameters.h"
 #include "RGB.h"
 #include <iostream>
-#include "math.h"
+#include <math.h>
 #include <stdio.h>
 
 /**
@@ -165,66 +165,49 @@ __global__ void  squareBlurKernel(RGB* pixels, int height, int width) {
 }
 
 //for edgeDir and gradiant I will have to use the index shit that has been used in all of the above stuff
-__global__ void GradiantStrength(RGB* pixels, int* edgeDir, int* gradiant, int height, int width) {
-	//printf("hi");
-	int row = blockIdx.x * blockDim.x + threadIdx.x; // width
-	int col = blockIdx.y * blockDim.y + threadIdx.y; // height
-	int newAngle = 0;
-	int index = col * width + row;
-	int* GxMask = (int*)malloc(width*3);
-	int* GyMask = (int*)malloc(width*3);
+__global__ void GradiantStrength(RGB* d_pixels, int* edgeDir, int* gradiant, int height, int width) {
+	int col = blockIdx.x * blockDim.x + threadIdx.x; // width
+	int row = blockIdx.y * blockDim.y + threadIdx.y; // height
 	
-	//int GxMask[1000000];				// Sobel mask in the x direction
-	//int GyMask[1000000];				// Sobel mask in the y direction
-	//printf("hello there");
-	//sobel mask set up
-	//GxMask[width * 4] = 20;
-
-	GxMask[0] = -1; GxMask[1] = -2;  GxMask[2] = -1;
-	GxMask[width] = 0;  GxMask[width + 1] = 0;  GxMask[width + 2] = 0;
-	GxMask[width * 2] = 1;  GxMask[width * 2 + 1] = 2;  GxMask[width * 2 + 2] = 1;
-	GyMask[0] = 1; GyMask[1] = 0; GyMask[2] = -1;
-	GyMask[width] = 2; GyMask[width + 1] = 0; GyMask[width + 2] = -2;
-	GyMask[width * 2] = 1; GyMask[width * 2 + 1] = 0; GyMask[width * 2 + 2] = -1;
-	
-	printf("ahhhhh");
-	if (col >= height || col >= width) {
+	if (row >= height || col >= width) {
 		return;
 	}
-	printf("a");
-	//long i = (unsigned long)(row * 3 * width + 3 * col);
-	double Gx = 0;
-	double Gy = 0;
-	/* Calculate the sum of the Sobel mask times the nine surrounding pixels in the x and y direction */
-	for (int rowOffset = -1; rowOffset <= 1; rowOffset++) {
-		for (int colOffset = -1; colOffset <= 1; colOffset++) {
-			int rowTotal = row + rowOffset;
-			int colTotal = col + colOffset;
-			long iOffset = (unsigned long)(rowTotal * 3 * width + colTotal * 3);
+	
+	int index = row * width + col;
+	float Gx = 0;
+	float Gy = 0;
+	int newAngle = 2000;
+	//printf("hello");
 
-			int gIndex = colOffset * width + rowOffset + 1;
-			Gx = Gx + (pixels[index].red * (GxMask[gIndex]));//the image should have already been changed to grayscale so any color should be fine
-			//std::cout << "red from graidnant strength in kernel is: " << pixels[index].red << std::endl;
-			printf("red from graidnant strength in kernel is: %d", pixels[index].red);
-			Gy = Gy + (pixels[index].red * (GyMask[gIndex]));
+	if (col < width && row < height) {
+		if (col > 0 && row > 0 && col < width && row < height) {
+			printf("col: %d, row %d, width: %d, height: %d \n",col,row,width,height);
+			Gx = (-1 * d_pixels[(row - 1) * width + (col - 1)].red) + (-2 * d_pixels[row * width + (col - 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (2 * d_pixels[row * width + (col + 1)].red) + (d_pixels[(row + 1) * width + (col + 1)].red);
+			Gy = (d_pixels[(row - 1) * width + (col - 1)].red) + (2 * d_pixels[(row - 1) * width + col].red) + (d_pixels[(row - 1) * width + (col + 1)].red) + (-1 * d_pixels[(row + 1) * width + (col - 1)].red) + (-2 * d_pixels[(row + 1) * width + col].red) + (-1 * d_pixels[(row + 1) * width + (col + 1)].red);
+
 		}
 	}
-
-	gradiant[index] = sqrt((Gx*Gx) + (Gy*Gy));	// Calculate gradient strength			
 	
+	//this was mostly found here: 
+	gradiant[index] = sqrt((Gx * Gx) + (Gy * Gy));	// Calculate gradient strength						
 	double thisAngle = (atan2(Gx, Gy) / 3.14159) * 180.0;		// Calculate actual direction of edge
-
+	//std::cout << "this Angle is: " << thisAngle << " gradiant: " << sqrt((Gx * Gx) + (Gy * Gy)) << std::endl;
 	/* Convert actual edge direction to approximate value */
-	if (((thisAngle < 22.5) && (thisAngle > -22.5)) || (thisAngle > 157.5) || (thisAngle < -157.5))
+	if (((thisAngle < 22.5) && (thisAngle > -22.5)) || (thisAngle > 157.5) || (thisAngle < -157.5)) {
 		newAngle = 0;
-	if (((thisAngle > 22.5) && (thisAngle < 67.5)) || ((thisAngle < -112.5) && (thisAngle > -157.5)))
+	}
+	if (((thisAngle > 22.5) && (thisAngle < 67.5)) || ((thisAngle < -112.5) && (thisAngle > -157.5))) {
 		newAngle = 45;
-	if (((thisAngle > 67.5) && (thisAngle < 112.5)) || ((thisAngle < -67.5) && (thisAngle > -112.5)))
+	}	
+	if (((thisAngle > 67.5) && (thisAngle < 112.5)) || ((thisAngle < -67.5) && (thisAngle > -112.5))) {
 		newAngle = 90;
-	if (((thisAngle > 112.5) && (thisAngle < 157.5)) || ((thisAngle < -22.5) && (thisAngle > -67.5)))
+	}
+	if (((thisAngle > 112.5) && (thisAngle < 157.5)) || ((thisAngle < -22.5) && (thisAngle > -67.5))) {
 		newAngle = 135;
+	}
+		
 
-	edgeDir[index] = newAngle;		// Store the approximate edge direction of each pixel in one array
+	edgeDir[index] = newAngle;	// Store the approximate edge direction of each pixel in one array
 }
 
 __host__ void squareBlurLauncher(RGB* pixel, int height, int width) {
@@ -246,9 +229,16 @@ __host__ void squareBlurLauncher(RGB* pixel, int height, int width) {
 
 __host__ void gradiantLauncher(RGB* pixels, int* edgeDir, int* gradiant, int height, int width) {
 	RGB* d_pixel;
+	int* d_edgeDir;
+	int * d_gradiant;
 
 	cudaMalloc(&d_pixel, height * width * sizeof(RGB));
 	cudaMemcpy(d_pixel, pixels, height * width * sizeof(RGB), cudaMemcpyHostToDevice);
+	
+	cudaMalloc(&d_edgeDir, height * width * sizeof(int));
+	cudaMemcpy(d_edgeDir, edgeDir, height * width * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMalloc(&d_gradiant, height * width * sizeof(int));
+	cudaMemcpy(d_gradiant, gradiant, height * width * sizeof(int), cudaMemcpyHostToDevice);
 
 	dim3 grid, block;
 	block.x = 16;
@@ -256,8 +246,10 @@ __host__ void gradiantLauncher(RGB* pixels, int* edgeDir, int* gradiant, int hei
 	grid.x = calcBlockDim(width, block.x);
 	grid.y = calcBlockDim(height, block.y);
 
-	GradiantStrength << <grid, block >> > (d_pixel, edgeDir, gradiant, height, width);
+	GradiantStrength << <grid, block >> > (d_pixel, d_edgeDir, d_gradiant, height, width);
 	cudaMemcpy(pixels, d_pixel, height * width * sizeof(RGB), cudaMemcpyDeviceToHost);
+	cudaMemcpy(edgeDir, d_edgeDir, height*width*sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(gradiant, d_gradiant, height*width*sizeof(int), cudaMemcpyDeviceToHost);
 }
 
 
