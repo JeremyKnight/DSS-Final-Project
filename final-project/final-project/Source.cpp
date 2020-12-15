@@ -258,8 +258,6 @@ void gradiantMaker(RGB* d_pixels, int* edgeDir, int* gradiant, int height, int w
 
 
 void findEdge(RGB* pixels, int* edgeDir, int* gradient, int rowShift, int colShift, int row, int col, int dir, int lowerThreshold, int width, int height) {
-	//int W = 320;
-	//int H = 240;
 	int newRow = 0;
 	int newCol = 0;
 	unsigned long i;
